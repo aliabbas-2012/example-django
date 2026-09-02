@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: payments_demo
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:emulators
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
+    ports:
+      - "8085:8085"
+
+  app:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      DJANGO_DB_HOST: db
+      DJANGO_DB_NAME: payments_demo
+      DJANGO_DB_USER: demo
+      DJANGO_DB_PASSWORD: demo
+      MONGO_URL: mongodb://mongo:27017
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      GOOGLE_CLOUD_PROJECT: payments-demo
+    depends_on:
+      db:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+      pubsub-emulator:
+        condition: service_started
+    command: sleep infinity
