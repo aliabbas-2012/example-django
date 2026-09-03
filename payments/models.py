@@ -7,6 +7,14 @@ class Wallet(models.Model):
     owner_id = models.CharField(max_length=64, unique=True)
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
+    # Maintained only by payments/signals.py's post_save receiver on
+    # Transaction -- kept separate from `balance` on purpose, since
+    # `balance` is already mutated directly (with its own row lock) inside
+    # payments/tasks.py:process_payment_event. A signal that also touched
+    # `balance` would double-credit every wallet processed through that
+    # task. See demo_django_signals.py.
+    txn_count = models.PositiveIntegerField(default=0)
+
     def __str__(self) -> str:
         return f"Wallet({self.owner_id}) = {self.balance}"
 
