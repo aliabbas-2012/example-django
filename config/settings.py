@@ -2,17 +2,33 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Local, host-only overrides (see .env.example). Does nothing if .env
+# doesn't exist -- the Docker `app` container never needs this, since
+# docker-compose.yml sets its environment directly.
+load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = "django-insecure-example-key-do-not-use-in-production"
 DEBUG = True
 ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver"]
 
-# Set only inside the `app` service in docker-compose.yml. The host venv
-# (Q1-Q6 demos) never sets this and keeps using sqlite -- GDAL/GEOS, which
-# django.contrib.gis needs to even import, is only installed inside that
-# container (see Dockerfile), not on the host.
-USE_POSTGIS = bool(os.environ.get("DJANGO_DB_HOST"))
+# DJANGO_DB_HOST alone just means "use Postgres instead of sqlite" -- set
+# it on the host (via .env) to point at any real Postgres, e.g. a local
+# `docker run postgres` or a Postgres-in-Docker container, with no GIS
+# involved at all.
+#
+# DJANGO_USE_GIS is the separate, narrower flag that additionally loads
+# django.contrib.gis + fleet and switches to the PostGIS-aware DB backend.
+# Only the Docker `app` service sets it (see docker-compose.yml), because
+# django.contrib.gis needs GDAL/GEOS client libraries to even import, and
+# those are only installed inside that container (see Dockerfile) -- not
+# on the host, which has no sudo-free way to get them. Never set
+# DJANGO_USE_GIS in a host .env; it will fail to import.
+USE_POSTGRES = bool(os.environ.get("DJANGO_DB_HOST"))
+USE_POSTGIS = USE_POSTGRES and bool(os.environ.get("DJANGO_USE_GIS"))
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -61,6 +77,17 @@ if USE_POSTGIS:
     DATABASES = {
         "default": {
             "ENGINE": "django.contrib.gis.db.backends.postgis",
+            "NAME": os.environ["DJANGO_DB_NAME"],
+            "USER": os.environ["DJANGO_DB_USER"],
+            "PASSWORD": os.environ["DJANGO_DB_PASSWORD"],
+            "HOST": os.environ["DJANGO_DB_HOST"],
+            "PORT": os.environ.get("DJANGO_DB_PORT", "5432"),
+        }
+    }
+elif USE_POSTGRES:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
             "NAME": os.environ["DJANGO_DB_NAME"],
             "USER": os.environ["DJANGO_DB_USER"],
             "PASSWORD": os.environ["DJANGO_DB_PASSWORD"],
