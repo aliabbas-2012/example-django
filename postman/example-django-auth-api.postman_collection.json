@@ -1,0 +1,329 @@
+{
+  "info": {
+    "name": "example-django: Auth + Wallet API",
+    "description": "Register -> login -> me -> wallet CRUD -> logout, plus a two-user folder proving IsWalletOwner returns 403 (not 404) on someone else's wallet. Run top-to-bottom inside a folder; test scripts auto-capture tokens/ids into collection variables as you go. Point {{base_url}} at a host venv (`python manage.py runserver`) -- no Docker app container needed.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000" },
+    { "key": "demo_username", "value": "postman-carol" },
+    { "key": "demo_password", "value": "postman-pass-123" },
+    { "key": "access_token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "wallet_id", "value": "" },
+    { "key": "bob_username", "value": "postman-bob" },
+    { "key": "bob_access_token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{demo_username}}\",\n  \"password\": \"{{demo_password}}\",\n  \"email\": \"carol@example.com\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/auth/register/", "host": ["{{base_url}}"], "path": ["api", "auth", "register", ""] },
+            "description": "Creates the User AND a zero-balance Wallet in the same call. Re-running with the same demo_username will 400 (\"already exists\") -- change demo_username first if you want a fresh user."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('wallet_id', body.wallet.id);",
+                  "    pm.test('wallet starts at 0.00', () => pm.expect(body.wallet.balance).to.eql('0.00'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login (obtain token pair)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{demo_username}}\",\n  \"password\": \"{{demo_password}}\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/token/", "host": ["{{base_url}}"], "path": ["api", "token", ""] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('access_token', body.access);",
+                  "pm.collectionVariables.set('refresh_token', body.refresh);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me (who am I + my wallet)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/api/auth/me/", "host": ["{{base_url}}"], "path": ["api", "auth", "me", ""] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('wallet_id', body.wallet.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me without a token (expect 401)",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/auth/me/", "host": ["{{base_url}}"], "path": ["api", "auth", "me", ""] },
+            "description": "No Authorization header at all -- DRF can't identify anyone. This is the 401 half of Q13's 401-vs-403 distinction."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('401 Unauthorized', () => pm.response.to.have.status(401));"] } }
+          ]
+        },
+        {
+          "name": "Refresh (rotates access + refresh)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}" },
+            "url": { "raw": "{{base_url}}/api/token/refresh/", "host": ["{{base_url}}"], "path": ["api", "token", "refresh", ""] },
+            "description": "ROTATE_REFRESH_TOKENS is on (see Q2): this issues a brand-new refresh token and blacklists the one just used. The old refresh_token value stops working the moment this succeeds."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.collectionVariables.set('access_token', body.access);",
+                  "pm.collectionVariables.set('refresh_token', body.refresh);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout (blacklist refresh now)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}" },
+            "url": { "raw": "{{base_url}}/api/auth/logout/", "host": ["{{base_url}}"], "path": ["api", "auth", "logout", ""] },
+            "description": "Unlike rotation (which only blacklists a refresh token once it's used again), this ends the session on demand -- run 'Refresh with the logged-out token' right after this to see it rejected."
+          },
+          "event": [
+            { "listen": "test", "script": { "exec": ["pm.test('205 Reset Content', () => pm.response.to.have.status(205));"] } }
+          ]
+        },
+        {
+          "name": "Refresh with the logged-out token (expect 401)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refresh\": \"{{refresh_token}}\"\n}" },
+            "url": { "raw": "{{base_url}}/api/token/refresh/", "host": ["{{base_url}}"], "path": ["api", "token", "refresh", ""] },
+            "description": "Run this right after Logout. Same token, now blacklisted -- proves logout actually revoked it instead of just telling the client to forget it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('401 Unauthorized (blacklisted)', () => pm.response.to.have.status(401));",
+                  "pm.test('reason is blacklisting, not expiry', () => pm.expect(pm.response.json().detail).to.include('blacklisted'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Wallets",
+      "item": [
+        {
+          "name": "List wallets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/api/wallets/", "host": ["{{base_url}}"], "path": ["api", "wallets", ""] }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Retrieve my wallet",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/api/wallets/{{wallet_id}}/", "host": ["{{base_url}}"], "path": ["api", "wallets", "{{wallet_id}}", ""] }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"] } }]
+        },
+        {
+          "name": "Create another wallet (expect 400 -- you already have one)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" },
+            "url": { "raw": "{{base_url}}/api/wallets/", "host": ["{{base_url}}"], "path": ["api", "wallets", ""] },
+            "description": "owner_id/balance/txn_count are all read-only and set server-side, so there's nothing to put in the body -- and since Wallet.owner_id is unique, a second wallet for the same user is rejected with a clean 400, not a raw 500."
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('400 Bad Request', () => pm.response.to.have.status(400));"] } }]
+        },
+        {
+          "name": "Try to PATCH my own balance (has no effect)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"balance\": \"999999.00\"\n}" },
+            "url": { "raw": "{{base_url}}/api/wallets/{{wallet_id}}/", "host": ["{{base_url}}"], "path": ["api", "wallets", "{{wallet_id}}", ""] },
+            "description": "200 OK, but check the response body: balance is still 0.00. balance is read-only on WalletSerializer on purpose -- it only ever moves through the credit action's Celery task or the signals receiver, never a raw PATCH."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('balance did NOT change', () => pm.expect(pm.response.json().balance).to.not.eql('999999.00'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Credit my wallet",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{access_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"event_id\": \"postman-evt-1\",\n  \"amount\": \"25.00\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/wallets/{{wallet_id}}/credit/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "wallets", "{{wallet_id}}", "credit", ""]
+            },
+            "description": "Queues an idempotent Celery task (see Q5) -- needs a worker running to actually apply the credit; the 202 itself just confirms it was accepted and permitted."
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('202 Accepted', () => pm.response.to.have.status(202));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "3. 401 vs 403 (two users)",
+      "item": [
+        {
+          "name": "Register Bob",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{bob_username}}\",\n  \"password\": \"{{demo_password}}\"\n}" },
+            "url": { "raw": "{{base_url}}/api/auth/register/", "host": ["{{base_url}}"], "path": ["api", "auth", "register", ""] },
+            "description": "Run '1. Auth / Register' (Carol) BEFORE this, so wallet_id below still points at Carol's wallet."
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('201 Created', () => pm.response.to.have.status(201));"] } }]
+        },
+        {
+          "name": "Login Bob",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"username\": \"{{bob_username}}\",\n  \"password\": \"{{demo_password}}\"\n}" },
+            "url": { "raw": "{{base_url}}/api/token/", "host": ["{{base_url}}"], "path": ["api", "token", ""] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('bob_access_token', pm.response.json().access);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Bob tries to PATCH Carol's wallet (expect 403)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{bob_access_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"balance\": \"1.00\"\n}" },
+            "url": { "raw": "{{base_url}}/api/wallets/{{wallet_id}}/", "host": ["{{base_url}}"], "path": ["api", "wallets", "{{wallet_id}}", ""] },
+            "description": "Bob has a perfectly valid token -- DRF knows exactly who he is. IsWalletOwner is what says no here, which is why this is 403, not 401."
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('403 Forbidden', () => pm.response.to.have.status(403));"] } }]
+        },
+        {
+          "name": "Bob tries to credit Carol's wallet (expect 403)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{bob_access_token}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"event_id\": \"postman-evt-bob-1\",\n  \"amount\": \"10.00\"\n}" },
+            "url": {
+              "raw": "{{base_url}}/api/wallets/{{wallet_id}}/credit/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "wallets", "{{wallet_id}}", "credit", ""]
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('403 Forbidden', () => pm.response.to.have.status(403));"] } }]
+        }
+      ]
+    },
+    {
+      "name": "4. Cleanup",
+      "item": [
+        {
+          "name": "Delete my wallet",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{access_token}}" }],
+            "url": { "raw": "{{base_url}}/api/wallets/{{wallet_id}}/", "host": ["{{base_url}}"], "path": ["api", "wallets", "{{wallet_id}}", ""] },
+            "description": "Runs last on purpose -- folder 3 still needs Carol's wallet to exist so Bob's requests hit a real 403, not a 404 for a wallet that's already gone."
+          },
+          "event": [{ "listen": "test", "script": { "exec": ["pm.test('204 No Content', () => pm.response.to.have.status(204));"] } }]
+        }
+      ]
+    }
+  ]
+}
