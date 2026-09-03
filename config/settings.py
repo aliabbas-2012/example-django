@@ -33,12 +33,18 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.sessions",
     "django.contrib.messages",
+    # Listed BEFORE django.contrib.staticfiles: Django resolves a
+    # management command name to whichever app appears earliest in this
+    # list that defines it, and staticfiles ships its own `runserver`
+    # override (to also serve static files in DEBUG) -- payments'
+    # `runserver` override (see its management/commands/runserver.py,
+    # just the default port) would otherwise be silently shadowed.
+    "payments",
     "django.contrib.staticfiles",
     "django_celery_results",
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
-    "payments",
 ]
 
 if USE_POSTGIS:

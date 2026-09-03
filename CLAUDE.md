@@ -14,8 +14,10 @@ Activate the venv first for anything below: `source .venv/bin/activate` (Python 
 python manage.py check
 python manage.py makemigrations <app>
 python manage.py migrate
-python manage.py runserver
+python manage.py runserver    # binds :8011 by default -- see payments/management/commands/runserver.py
 ```
+
+`payments/management/commands/runserver.py` overrides Django's built-in `runserver` to default to port **8011** instead of 8000 (already taken by an unrelated process on this machine) — `python manage.py runserver <port>` still overrides it either way. It subclasses `django.contrib.staticfiles`'s `runserver`, not the bare core one, so `/api/docs/`'s Swagger UI assets still serve correctly in `DEBUG`. This only works because `payments` is listed **before** `django.contrib.staticfiles` in `INSTALLED_APPS` — Django resolves a command name to whichever app appears earliest that defines it, so don't reorder those two.
 
 There is no test suite — verification is the `demo_*` commands themselves. **Everything, including PostGIS, runs on the host venv.** There is no `Dockerfile` and no Django `app` container in this repo — deliberately removed. `docker compose up -d` exists only to start two plain, unmodified containers (`mongo`, `pubsub-emulator`) that Q9/Q10 talk to over `localhost`; it never builds or runs this project's own code.
 
