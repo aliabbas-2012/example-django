@@ -6,9 +6,9 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Local, host-only overrides (see .env.example). Does nothing if .env
-# doesn't exist -- the Docker `app` container never needs this, since
-# docker-compose.yml sets its environment directly.
+# Host-only overrides (see .env.example). Does nothing if .env doesn't
+# exist. Everything in this project -- including PostGIS -- runs on the
+# host venv; there is no Dockerfile and no app container.
 load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = "django-insecure-example-key-do-not-use-in-production"
@@ -16,17 +16,14 @@ DEBUG = True
 ALLOWED_HOSTS: list[str] = ["localhost", "127.0.0.1", "testserver"]
 
 # DJANGO_DB_HOST alone just means "use Postgres instead of sqlite" -- set
-# it on the host (via .env) to point at any real Postgres, e.g. a local
-# `docker run postgres` or a Postgres-in-Docker container, with no GIS
-# involved at all.
+# it in .env to point at any real Postgres, with no GIS involved at all.
 #
 # DJANGO_USE_GIS is the separate, narrower flag that additionally loads
 # django.contrib.gis + fleet and switches to the PostGIS-aware DB backend.
-# Only the Docker `app` service sets it (see docker-compose.yml), because
-# django.contrib.gis needs GDAL/GEOS client libraries to even import, and
-# those are only installed inside that container (see Dockerfile) -- not
-# on the host, which has no sudo-free way to get them. Never set
-# DJANGO_USE_GIS in a host .env; it will fail to import.
+# django.contrib.gis loads GDAL/GEOS/PROJ via ctypes, as *system*
+# libraries pip can't install -- `sudo apt-get install gdal-bin
+# libgdal-dev libgeos-dev libproj-dev` once, then DJANGO_USE_GIS=1 in
+# .env works exactly the same way on the host as it would in a container.
 USE_POSTGRES = bool(os.environ.get("DJANGO_DB_HOST"))
 USE_POSTGIS = USE_POSTGRES and bool(os.environ.get("DJANGO_USE_GIS"))
 
@@ -36,12 +33,18 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.sessions",
     "django.contrib.messages",
+    # Listed BEFORE django.contrib.staticfiles: Django resolves a
+    # management command name to whichever app appears earliest in this
+    # list that defines it, and staticfiles ships its own `runserver`
+    # override (to also serve static files in DEBUG) -- payments'
+    # `runserver` override (see its management/commands/runserver.py,
+    # just the default port) would otherwise be silently shadowed.
+    "payments",
     "django.contrib.staticfiles",
     "django_celery_results",
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
-    "payments",
 ]
 
 if USE_POSTGIS:

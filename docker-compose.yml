@@ -9,25 +9,3 @@ services:
     command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
     ports:
       - "8085:8085"
-
-  app:
-    build: .
-    volumes:
-      - .:/app
-    environment:
-      DJANGO_DB_HOST: host.docker.internal
-      DJANGO_USE_GIS: "1"
-      DJANGO_DB_NAME: payments_demo
-      DJANGO_DB_USER: demo
-      DJANGO_DB_PASSWORD: demo
-      MONGO_URL: mongodb://mongo:27017
-      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
-      GOOGLE_CLOUD_PROJECT: payments-demo
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      mongo:
-        condition: service_started
-      pubsub-emulator:
-        condition: service_started
-    command: sleep infinity

@@ -11,8 +11,12 @@ class Command(BaseCommand):
     help = "Demonstrates the N+1 query problem and how select_related/prefetch_related fix it."
 
     def handle(self, *args, **options):
-        Transaction.objects.all().delete()
-        Wallet.objects.all().delete()
+        # Scoped to this command's own rows, not Transaction.objects.all()/
+        # Wallet.objects.all() -- against a real, shared, persistent
+        # Postgres DB (not a throwaway sqlite file), an unscoped delete
+        # here wipes every other demo's and every real user's wallet too.
+        Transaction.objects.filter(wallet__owner_id__startswith="n1-user-").delete()
+        Wallet.objects.filter(owner_id__startswith="n1-user-").delete()
 
         wallets = [Wallet.objects.create(owner_id=f"n1-user-{i}", balance=Decimal("0.00")) for i in range(10)]
         for w in wallets:
