@@ -3,11 +3,12 @@ from decimal import Decimal
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from payments.models import Wallet
+from payments.permissions import IsWalletOwner
 from payments.serializers import (
     CreditWalletRequestSerializer,
     CreditWalletResponseSerializer,
@@ -41,7 +42,11 @@ class WalletViewSet(viewsets.ReadOnlyModelViewSet):
             "payments.tasks.process_payment_event."
         ),
     )
-    @action(detail=True, methods=["post"])
+    # permission_classes here overrides the viewset/global default
+    # (IsAuthenticated alone) for this one action. IsWalletOwner is an
+    # object-level check -- self.get_object() below calls
+    # check_object_permissions() itself, which is what actually runs it.
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated, IsWalletOwner])
     def credit(self, request, pk=None):
         wallet = self.get_object()
         body = CreditWalletRequestSerializer(data=request.data)
@@ -56,6 +61,22 @@ class WalletViewSet(viewsets.ReadOnlyModelViewSet):
             CreditWalletResponseSerializer({"result": async_result.id}).data,
             status=202,
         )
+
+
+class MiddlewareProbeView(APIView):
+    """
+    Deliberately trivial -- its only job is to be the innermost point of
+    the middleware chain that demo_middleware_lifecycle.py hits, so the
+    view itself contributes nothing to the captured request/response
+    order besides being the thing every middleware wraps around.
+    """
+
+    permission_classes = [AllowAny]
+
+    @extend_schema(exclude=True)
+    def get(self, request):
+        request.middleware_log.append("View: handling request")
+        return Response({"ok": True})
 
 
 class GatewayWebhookView(APIView):

@@ -52,6 +52,11 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # Logging-only middleware whose sole purpose is demo_middleware_lifecycle.py --
+    # see payments/middleware.py for why the order here is the whole point.
+    "payments.middleware.OuterLifecycleMiddleware",
+    "payments.middleware.ShortCircuitMiddleware",
+    "payments.middleware.InnerLifecycleMiddleware",
 ]
 
 TEMPLATES = [
