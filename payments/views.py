@@ -25,6 +25,18 @@ from payments.tasks import process_payment_event
 from payments.webhook_schema import is_payment_event_payload
 
 
+def _me_payload(user: User) -> dict:
+    wallet = Wallet.objects.filter(owner_id=user.username).first()
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "wallet": wallet,
+    }
+
+
 class RegisterView(APIView):
     """
     Signup: creates the User AND a zero-balance Wallet in the same call,
@@ -42,12 +54,11 @@ class RegisterView(APIView):
             username=body.validated_data["username"],
             email=body.validated_data["email"],
             password=body.validated_data["password"],
+            first_name=body.validated_data["first_name"],
+            last_name=body.validated_data["last_name"],
         )
-        wallet = Wallet.objects.create(owner_id=user.username)
-        return Response(
-            MeSerializer({"id": user.id, "username": user.username, "email": user.email, "wallet": wallet}).data,
-            status=status.HTTP_201_CREATED,
-        )
+        Wallet.objects.create(owner_id=user.username)
+        return Response(MeSerializer(_me_payload(user)).data, status=status.HTTP_201_CREATED)
 
 
 class MeView(APIView):
@@ -55,12 +66,7 @@ class MeView(APIView):
 
     @extend_schema(responses=MeSerializer)
     def get(self, request):
-        wallet = Wallet.objects.filter(owner_id=request.user.username).first()
-        return Response(
-            MeSerializer(
-                {"id": request.user.id, "username": request.user.username, "email": request.user.email, "wallet": wallet}
-            ).data
-        )
+        return Response(MeSerializer(_me_payload(request.user)).data)
 
 
 class LogoutView(APIView):

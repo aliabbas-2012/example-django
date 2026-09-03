@@ -36,6 +36,8 @@ class RegisterSerializer(serializers.Serializer):
 
     username = serializers.CharField(max_length=150)
     email = serializers.EmailField(required=False, allow_blank=True, default="")
+    first_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
+    last_name = serializers.CharField(max_length=150, required=False, allow_blank=True, default="")
     password = serializers.CharField(write_only=True, min_length=8)
 
     def validate_username(self, value: str) -> str:
@@ -56,6 +58,8 @@ class MeSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
     username = serializers.CharField(read_only=True)
     email = serializers.EmailField(read_only=True)
+    first_name = serializers.CharField(read_only=True)
+    last_name = serializers.CharField(read_only=True)
     wallet = WalletSerializer(read_only=True, allow_null=True)
 
 
